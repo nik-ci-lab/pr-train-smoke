@@ -1,5 +1,5 @@
 # Task-Id: T011  Factory-Id: c
-VALID = False
+VALID = True
 BREAKS_INTEGRATION = False
 EXCLUSIVE = None
 FEATURE = 'feature t011'
