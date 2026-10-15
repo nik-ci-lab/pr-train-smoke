@@ -1,5 +1,5 @@
 # Task-Id: T008  Factory-Id: b
 VALID = True
 BREAKS_INTEGRATION = False
-EXCLUSIVE = 'route:/pair2'
+EXCLUSIVE = None
 FEATURE = 'feature t008'
