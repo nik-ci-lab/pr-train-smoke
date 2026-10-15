@@ -1,0 +1,67 @@
+name: policy
+
+on:
+  pull_request:
+    branches: [qa, qa-intake]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      mode: ${{ steps.c.outputs.mode }}
+      shards: ${{ steps.c.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: c
+        env:
+          EVENT: ${{ github.event_name }}
+          LAB_MODE: ${{ vars.LAB_MODE }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: python ci/classify.py
+
+  test:
+    needs: classify
+    if: needs.classify.outputs.shards != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.classify.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          SHARD: ${{ matrix.shard }}
+        run: python ci/run_tests.py "$SHARD"
+
+  # The only required check. Runs always; skipped or cancelled tests never count as success.
+  gate:
+    needs: [classify, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          CLASSIFY: ${{ needs.classify.result }}
+          TEST: ${{ needs.test.result }}
+          MODE: ${{ needs.classify.outputs.mode }}
+          SHARDS: ${{ needs.classify.outputs.shards }}
+        run: |
+          echo "mode=$MODE classify=$CLASSIFY test=$TEST shards=$SHARDS"
+          [ "$CLASSIFY" = success ] || { echo "classify did not succeed"; exit 1; }
+          [ "$MODE" != REJECT ] || { echo "only train/* PRs may target qa"; exit 1; }
+          if [ "$SHARDS" = "[]" ]; then echo "nothing affected"; exit 0; fi
+          [ "$TEST" = success ] || { echo "tests did not succeed"; exit 1; }
